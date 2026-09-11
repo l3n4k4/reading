@@ -1295,3 +1295,53 @@ body.dark-theme .top-nav a.active {
     margin-top: 1rem;
 }
 
+/* Resize Handle Styles */
+.analysis-panel {
+    position: relative;
+}
+
+.panel-resize-handle {
+    width: 8px;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.2s;
+    z-index: 2;
+}
+
+.panel-resize-handle:hover,
+.panel-resize-handle.dragging {
+    background: var(--primary);
+}
+
+.mobile-resize-handle {
+    width: 44px;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    margin: 0 auto 0.5rem;
+    cursor: row-resize;
+}
+
+.mobile-resize-handle:active {
+    background: var(--primary);
+}
+
+/* Panel resizing state */
+.analysis-panel.resizing {
+    user-select: none;
+}
+
+/* Mobile sheet resizing state */
+.mobile-bottom-sheet.resizing {
+    user-select: none;
+}
+
+/* Resize Handles */
+.analysis-panel {
+    position: relative;
+}
+

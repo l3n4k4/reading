@@ -37,6 +37,8 @@ class ReadingApp {
         this.mobileBackdrop = document.getElementById('mobileBackdrop');
         this.mobileCloseBtn = document.getElementById('mobileCloseBtn');
         this.mobileBookmarkBtn = document.getElementById('mobileBookmarkBtn');
+        this.panelResizeHandle = document.getElementById('panelResizeHandle');
+        this.mobileResizeHandle = document.getElementById('mobileResizeHandle');
 
         // Stats elements
         this.totalSentencesEl = document.getElementById('totalSentences');
@@ -50,6 +52,10 @@ class ReadingApp {
         this.mobileCloseBtn?.addEventListener('click', () => this.closeMobileSheet());
         this.mobileBackdrop?.addEventListener('click', () => this.closeMobileSheet());
         this.mobileBookmarkBtn?.addEventListener('click', () => this.toggleBookmark());
+
+        // Resize handles
+        this.panelResizeHandle?.addEventListener('mousedown', (e) => this.startResizePanel(e));
+        this.mobileResizeHandle?.addEventListener('mousedown', (e) => this.startResizeMobileSheet(e));
 
         // Keyboard navigation
         document.addEventListener('keydown', (e) => this.handleKeyboard(e));
@@ -341,6 +347,67 @@ class ReadingApp {
         // Update progress
         const progress = total > 0 ? (this.viewedSentences.size / total) * 100 : 0;
         this.progressFill.style.width = `${progress}%`;
+    }
+
+    startResizePanel(event) {
+        event.preventDefault();
+        const panel = this.analysisPanel;
+        if (!panel) return;
+
+        const startX = event.clientX;
+        const startWidth = panel.getBoundingClientRect().width;
+        const minPanelWidth = 240;
+        const maxPanelWidth = 650;
+
+        panel.classList.add('resizing');
+        document.body.style.cursor = 'col-resize';
+
+        const handleResize = (moveEvent) => {
+            const deltaX = moveEvent.clientX - startX;
+            const newWidth = Math.min(maxPanelWidth, Math.max(minPanelWidth, startWidth + deltaX));
+            panel.style.width = `${newWidth}px`;
+            panel.style.maxWidth = `${newWidth}px`;
+        };
+
+        const stopResize = () => {
+            panel.classList.remove('resizing');
+            document.body.style.cursor = '';
+            window.removeEventListener('mousemove', handleResize);
+            window.removeEventListener('mouseup', stopResize);
+        };
+
+        window.addEventListener('mousemove', handleResize);
+        window.addEventListener('mouseup', stopResize);
+    }
+
+    startResizeMobileSheet(event) {
+        event.preventDefault();
+        const sheet = document.getElementById('mobileBottomSheet');
+        if (!sheet) return;
+
+        const startY = event.clientY;
+        const startHeight = sheet.getBoundingClientRect().height;
+        const minHeight = 180;
+        const maxHeight = window.innerHeight * 0.7; // 70% of viewport height
+
+        sheet.classList.add('resizing');
+        document.body.style.cursor = 'row-resize';
+
+        const handleResize = (moveEvent) => {
+            const deltaY = moveEvent.clientY - startY;
+            const newHeight = Math.min(maxHeight, Math.max(minHeight, startHeight + deltaY));
+            sheet.style.maxHeight = `${newHeight}px`;
+        };
+
+        const stopResize = () => {
+            sheet.classList.remove('resizing');
+            document.body.style.cursor = '';
+            window.removeEventListener('mousemove', handleResize);
+            window.removeEventListener('mouseup', stopResize);
+        };
+
+        window.addEventListener('mousemove', handleResize);
+        window.addEventListener('mouseup', stopResize);
     }
 
     isMobile() {
