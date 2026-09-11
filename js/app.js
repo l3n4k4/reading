@@ -54,6 +54,7 @@ class ReadingApp {
         this.mobileBookmarkBtn?.addEventListener('click', () => this.toggleBookmark());
 
         // Resize handles
+        this.mainLayout = document.querySelector('.main-layout');
         this.panelResizeHandle?.addEventListener('mousedown', (e) => this.startResizePanel(e));
         this.mobileResizeHandle?.addEventListener('mousedown', (e) => this.startResizeMobileSheet(e));
 
@@ -352,26 +353,54 @@ class ReadingApp {
     startResizePanel(event) {
         event.preventDefault();
         const panel = this.analysisPanel;
-        if (!panel) return;
+        const handle = this.panelResizeHandle;
+        if (!panel || !handle || !this.mainLayout) return;
 
         const startX = event.clientX;
-        const startWidth = panel.getBoundingClientRect().width;
-        const minPanelWidth = 240;
-        const maxPanelWidth = 650;
+        const panelRect = panel.getBoundingClientRect();
+        const startPanelWidth = panelRect.width;
+        const layoutRect = this.mainLayout.getBoundingClientRect();
+        const startLayoutWidth = layoutRect.width;
+        const gap = parseFloat(getComputedStyle(this.mainLayout).columnGap) || 32; // 2rem = 32px
+        const availableWidth = startLayoutWidth - gap;
 
+        // Calculate initial panel percentage
+        const startPanelPct = (startPanelWidth / availableWidth) * 100;
+        const minPanelPct = 15; // Minimum ~15% to ensure usability
+        const maxPanelPct = 70; // Maximum ~70% to ensure reading section remains usable
+
+        // Add visual feedback
         panel.classList.add('resizing');
         document.body.style.cursor = 'col-resize';
+        this.isResizing = true;
 
         const handleResize = (moveEvent) => {
+            // Prevent text selection during resize
+            moveEvent.preventDefault();
+            
             const deltaX = moveEvent.clientX - startX;
-            const newWidth = Math.min(maxPanelWidth, Math.max(minPanelWidth, startWidth + deltaX));
-            panel.style.width = `${newWidth}px`;
-            panel.style.maxWidth = `${newWidth}px`;
+            const currentPanelWidth = startPanelWidth + deltaX;
+            
+            // Clamp to available space with min/max reading section widths
+            const minReadingWidth = 240;
+            const maxReadingWidth = availableWidth - minReadingWidth;
+            let newPanelWidth = Math.min(maxReadingWidth, Math.max(minReadingWidth, currentPanelWidth));
+            
+            // Convert to percentage
+            const newPanelPct = (newPanelWidth / availableWidth) * 100;
+            const newReadingPct = 100 - newPanelPct;
+            
+            // Apply percentage-based grid template columns
+            this.mainLayout.style.gridTemplateColumns = `${newReadingPct}% ${newPanelPct}%`;
+            
+            // Position the handle at the boundary between the two tabs
+            handle.style.left = `calc(${newPanelPct}% - 4px)`;
         };
 
         const stopResize = () => {
             panel.classList.remove('resizing');
             document.body.style.cursor = '';
+            this.isResizing = false;
             window.removeEventListener('mousemove', handleResize);
             window.removeEventListener('mouseup', stopResize);
         };
