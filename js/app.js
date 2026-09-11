@@ -56,7 +56,9 @@ class ReadingApp {
         // Resize handles
         this.mainLayout = document.querySelector('.main-layout');
         this.panelResizeHandle?.addEventListener('mousedown', (e) => this.startResizePanel(e));
+        this.panelResizeHandle?.addEventListener('touchstart', (e) => this.startResizePanel(e.touches[0]));
         this.mobileResizeHandle?.addEventListener('mousedown', (e) => this.startResizeMobileSheet(e));
+        this.mobileResizeHandle?.addEventListener('touchstart', (e) => this.startResizeMobileSheet(e.touches[0]));
 
         // Keyboard navigation
         document.addEventListener('keydown', (e) => this.handleKeyboard(e));
@@ -356,87 +358,94 @@ class ReadingApp {
         const handle = this.panelResizeHandle;
         if (!panel || !handle || !this.mainLayout) return;
 
-        const startX = event.clientX;
-        const panelRect = panel.getBoundingClientRect();
-        const startPanelWidth = panelRect.width;
         const layoutRect = this.mainLayout.getBoundingClientRect();
         const startLayoutWidth = layoutRect.width;
-        const gap = parseFloat(getComputedStyle(this.mainLayout).columnGap) || 32; // 2rem = 32px
+        const gap = parseFloat(getComputedStyle(this.mainLayout).columnGap) || 32;
         const availableWidth = startLayoutWidth - gap;
 
-        // Calculate initial panel percentage
-        const startPanelPct = (startPanelWidth / availableWidth) * 100;
-        const minPanelPct = 15; // Minimum ~15% to ensure usability
-        const maxPanelPct = 70; // Maximum ~70% to ensure reading section remains usable
+        const minPanelPct = 15;
+        const maxPanelPct = 70;
 
-        // Add visual feedback
         panel.classList.add('resizing');
         document.body.style.cursor = 'col-resize';
+        document.body.style.touchAction = 'none';
         this.isResizing = true;
 
         const handleResize = (moveEvent) => {
-            // Prevent text selection during resize
             moveEvent.preventDefault();
             
-            const deltaX = moveEvent.clientX - startX;
-            const currentPanelWidth = startPanelWidth + deltaX;
+            const clientX = moveEvent.clientX || moveEvent.touches?.[0]?.clientX;
+            if (clientX === undefined) return;
             
-            // Clamp to available space with min/max reading section widths
-            const minReadingWidth = 240;
-            const maxReadingWidth = availableWidth - minReadingWidth;
-            let newPanelWidth = Math.min(maxReadingWidth, Math.max(minReadingWidth, currentPanelWidth));
-            
-            // Convert to percentage
-            const newPanelPct = (newPanelWidth / availableWidth) * 100;
+            const relativeX = clientX - layoutRect.left;
+            const newPanelPct = Math.min(maxPanelPct, Math.max(minPanelPct, (relativeX / availableWidth) * 100));
             const newReadingPct = 100 - newPanelPct;
             
-            // Apply percentage-based grid template columns
             this.mainLayout.style.gridTemplateColumns = `${newReadingPct}% ${newPanelPct}%`;
-            
-            // Position the handle at the boundary between the two tabs
             handle.style.left = `calc(${newPanelPct}% - 4px)`;
         };
 
         const stopResize = () => {
             panel.classList.remove('resizing');
             document.body.style.cursor = '';
+            document.body.style.touchAction = '';
             this.isResizing = false;
             window.removeEventListener('mousemove', handleResize);
             window.removeEventListener('mouseup', stopResize);
+            window.removeEventListener('touchmove', handleResize);
+            window.removeEventListener('touchend', stopResize);
         };
 
         window.addEventListener('mousemove', handleResize);
         window.addEventListener('mouseup', stopResize);
+        window.addEventListener('touchmove', handleResize, { passive: false });
+        window.addEventListener('touchend', stopResize);
     }
 
     startResizeMobileSheet(event) {
         event.preventDefault();
         const sheet = document.getElementById('mobileBottomSheet');
-        if (!sheet) return;
+        const handle = this.mobileResizeHandle;
+        if (!sheet || !handle) return;
 
-        const startY = event.clientY;
+        const startY = event.clientY || (event.touches?.[0]?.clientY);
+        if (startY === undefined) return;
+
         const startHeight = sheet.getBoundingClientRect().height;
         const minHeight = 180;
-        const maxHeight = window.innerHeight * 0.7; // 70% of viewport height
+        const maxHeight = window.innerHeight * 0.85;
+        const handleRect = handle.getBoundingClientRect();
+        const startYOffset = handleRect.top + handleRect.height / 2;
 
         sheet.classList.add('resizing');
         document.body.style.cursor = 'row-resize';
+        document.body.style.touchAction = 'none';
 
         const handleResize = (moveEvent) => {
-            const deltaY = moveEvent.clientY - startY;
-            const newHeight = Math.min(maxHeight, Math.max(minHeight, startHeight + deltaY));
+            moveEvent.preventDefault();
+            
+            const clientY = moveEvent.clientY || moveEvent.touches?.[0]?.clientY;
+            if (clientY === undefined) return;
+            
+            const deltaY = clientY - startY;
+            const newHeight = Math.min(maxHeight, Math.max(minHeight, startHeight - deltaY));
             sheet.style.maxHeight = `${newHeight}px`;
         };
 
         const stopResize = () => {
             sheet.classList.remove('resizing');
             document.body.style.cursor = '';
+            document.body.style.touchAction = '';
             window.removeEventListener('mousemove', handleResize);
             window.removeEventListener('mouseup', stopResize);
+            window.removeEventListener('touchmove', handleResize);
+            window.removeEventListener('touchend', stopResize);
         };
 
         window.addEventListener('mousemove', handleResize);
         window.addEventListener('mouseup', stopResize);
+        window.addEventListener('touchmove', handleResize, { passive: false });
+        window.addEventListener('touchend', stopResize);
     }
 
     isMobile() {
