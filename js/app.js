@@ -65,12 +65,7 @@ class ReadingApp {
 
         // Populate test selector (preserves saved test)
         const savedTest = populateTestSelector(this.testSelect, 'currentTest');
-        
-        // Try to get test from URL path first (e.g., /passage/academic-1-1)
-        const pathTest = this.getTestFromPath();
-        const initialTest = pathTest || savedTest;
-        
-        this.loadTest(initialTest);
+        this.loadTest(savedTest);
 
         initTheme(document.getElementById('themeToggle'));
     }
@@ -612,18 +607,5 @@ class ReadingApp {
         }
     }
 
-    // Subdomain/Path test detection
-    getTestFromPath() {
-        const path = window.location.pathname;
-        const match = path.match(/\/passage\/([^/]+)/);
-        if (match) {
-            return match[1];
-        }
-        return null;
-    }
-
     // Initialize app when DOM is ready
-    loadTestFromPath() {
-        return this.getTestFromPath();
-    }
 }
