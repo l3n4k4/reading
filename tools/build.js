@@ -7,17 +7,26 @@
  * instead of all 43 test files. Reads each tests/*.js the same way
  * tools/merge-vocab.js does: run it against a stub window and read back what
  * it pushed.
+ *
+ * Every CSS/JS asset is emitted under a content-hashed name. Changing a file
+ * changes its URL, so a browser can never serve a stale copy alongside fresh
+ * HTML — which is exactly how a fixed app.js once went unseen for four hours
+ * behind max-age=14400.
  */
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
 const TESTS_DIR = path.join(ROOT, 'tests');
 const TEMPLATES = path.join(__dirname, 'templates');
 const OUT = path.resolve(ROOT, process.argv[2] || 'dist');
+
+/* Directories whose files are copied under content-hashed names. */
+const ASSET_DIRS = ['css', 'js'];
 
 /* Groups, in the order they appear on the listing page. Any id whose prefix
  * is not listed here lands in "Other". */
@@ -33,6 +42,18 @@ function escapeHtml(text) {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+}
+
+/* Short content hash. Long enough that a collision is not a practical
+ * concern for a few dozen files. */
+function hashOf(buf) {
+    return crypto.createHash('sha256').update(buf).digest('hex').slice(0, 8);
+}
+
+/* "app.js" + contents -> "app.1a2b3c4d.js" */
+function hashedName(fileName, buf) {
+    const ext = path.extname(fileName);
+    return fileName.slice(0, fileName.length - ext.length) + '.' + hashOf(buf) + ext;
 }
 
 /* Sort so academic-2 comes before academic-10, which a plain string sort
@@ -120,6 +141,39 @@ function groupTests(tests) {
     return [...buckets].filter(([, items]) => items.length > 0);
 }
 
+function readTemplate(name) {
+    return fs.readFileSync(path.join(TEMPLATES, name), 'utf8');
+}
+
+function write(relPath, contents) {
+    const full = path.join(OUT, relPath);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, contents);
+}
+
+/* Copy every css/ and js/ file under a hashed name.
+ * Returns { "/js/app.js": "/js/app.1a2b3c4d.js", ... } */
+function emitAssets() {
+    const map = {};
+    ASSET_DIRS.forEach(dir => {
+        fs.readdirSync(path.join(ROOT, dir)).forEach(file => {
+            const buf = fs.readFileSync(path.join(ROOT, dir, file));
+            const out = hashedName(file, buf);
+            write(path.join(dir, out), buf);
+            map['/' + dir + '/' + file] = '/' + dir + '/' + out;
+        });
+    });
+    return map;
+}
+
+/* Point every asset reference in a page at its hashed URL. */
+function rewriteAssets(html, assetMap) {
+    return Object.entries(assetMap).reduce(
+        (out, [from, to]) => out.split('"' + from + '"').join('"' + to + '"'),
+        html
+    );
+}
+
 function renderListing(tests) {
     const groups = groupTests(tests).map(([label, items]) => {
         const rows = items.map(test =>
@@ -147,12 +201,8 @@ function renderListing(tests) {
         .replace('{{GROUPS}}', groups);
 }
 
-function readTemplate(name) {
-    return fs.readFileSync(path.join(TEMPLATES, name), 'utf8');
-}
-
 function renderTestPage(template, test) {
-    const scriptTag = '<script src="/tests/' + test.sourceFile + '"></script>';
+    const scriptTag = '<script src="' + test.scriptPath + '"></script>';
     return template
         .split('{{TITLE}}').join(escapeHtml(test.title))
         .split('{{ID_JSON}}').join(JSON.stringify(test.id))
@@ -160,11 +210,18 @@ function renderTestPage(template, test) {
         .split('{{TEST_SCRIPT}}').join(scriptTag);
 }
 
-function write(relPath, contents) {
-    const full = path.join(OUT, relPath);
-    fs.mkdirSync(path.dirname(full), { recursive: true });
-    fs.writeFileSync(full, contents);
-}
+/* Hashed assets never change content, so they can be cached forever.
+ * HTML keeps Pages' default (max-age=0, must-revalidate) so a deploy is
+ * visible immediately. */
+const HEADERS = [
+    '/css/*',
+    '  Cache-Control: public, max-age=31536000, immutable',
+    '/js/*',
+    '  Cache-Control: public, max-age=31536000, immutable',
+    '/tests/*',
+    '  Cache-Control: public, max-age=31536000, immutable',
+    ''
+].join('\n');
 
 function build() {
     const tests = collectTests();
@@ -172,36 +229,41 @@ function build() {
     fs.rmSync(OUT, { recursive: true, force: true });
     fs.mkdirSync(OUT, { recursive: true });
 
-    // Shared assets
-    fs.cpSync(path.join(ROOT, 'css'), path.join(OUT, 'css'), { recursive: true });
-    fs.cpSync(path.join(ROOT, 'js'), path.join(OUT, 'js'), { recursive: true });
+    const assetMap = emitAssets();
 
-    // Only the test files that back a page
-    const usedFiles = [...new Set(tests.map(t => t.sourceFile))];
-    usedFiles.forEach(file => {
-        fs.mkdirSync(path.join(OUT, 'tests'), { recursive: true });
-        fs.copyFileSync(path.join(TESTS_DIR, file), path.join(OUT, 'tests', file));
+    // Only the test files that back a page, each under a hashed name.
+    const emittedFor = new Map();
+    tests.forEach(test => {
+        if (!emittedFor.has(test.sourceFile)) {
+            const buf = fs.readFileSync(path.join(TESTS_DIR, test.sourceFile));
+            const out = hashedName(test.sourceFile, buf);
+            write(path.join('tests', out), buf);
+            emittedFor.set(test.sourceFile, '/tests/' + out);
+        }
+        test.scriptPath = emittedFor.get(test.sourceFile);
     });
 
-    // Listing, 404, redirects
-    write('index.html', renderListing(tests));
-    write('404.html', readTemplate('404.html'));
+    write('index.html', rewriteAssets(renderListing(tests), assetMap));
+    write('404.html', rewriteAssets(readTemplate('404.html'), assetMap));
     write('_redirects', '/questions /  302\n/questions.html /  302\n/index.html /  302\n');
+    write('_headers', HEADERS);
 
-    // One study page and one questions page per test
     const studyTpl = readTemplate('study.html');
     const questionsTpl = readTemplate('questions.html');
     tests.forEach(test => {
-        write(path.join(test.id, 'index.html'), renderTestPage(studyTpl, test));
-        write(path.join(test.id, 'questions', 'index.html'), renderTestPage(questionsTpl, test));
+        write(path.join(test.id, 'index.html'),
+            rewriteAssets(renderTestPage(studyTpl, test), assetMap));
+        write(path.join(test.id, 'questions', 'index.html'),
+            rewriteAssets(renderTestPage(questionsTpl, test), assetMap));
     });
 
-    console.log('Built ' + tests.length + ' tests (' + usedFiles.length + ' data files) into ' +
+    console.log('Built ' + tests.length + ' tests (' + emittedFor.size + ' data files) into ' +
         path.relative(ROOT, OUT) + '/');
-    console.log('  ' + (tests.length * 2 + 2) + ' HTML pages');
+    console.log('  ' + (tests.length * 2 + 2) + ' HTML pages, ' +
+        Object.keys(assetMap).length + ' hashed assets');
 }
 
-module.exports = { collectTests, naturalCompare, OUT, TESTS_DIR };
+module.exports = { collectTests, naturalCompare, hashOf, hashedName, ASSET_DIRS, OUT, TESTS_DIR };
 
 if (require.main === module) {
     try {
