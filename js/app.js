@@ -5,6 +5,19 @@
  */
 'use strict';
 
+/* Desktop splitter: percentage of the layout given to the reading pane. */
+const SPLIT_MIN = 25;
+const SPLIT_MAX = 75;
+const SPLIT_DEFAULT = 50;
+const SPLIT_KEY = 'readingSplit';
+
+/* Mobile sheet heights, as fractions of the viewport. Released below
+ * SHEET_DISMISS (or on a downward flick) the sheet closes instead of snapping. */
+const SHEET_SNAPS = [0.55, 0.92];
+const SHEET_DISMISS = 0.3;
+const SHEET_FLICK = 0.7; // px/ms
+const SHEET_KEY = 'readingSheetSnap';
+
 class ReadingApp {
     constructor() {
         this.currentTest = null;
@@ -37,6 +50,10 @@ class ReadingApp {
         this.mobileBackdrop = document.getElementById('mobileBackdrop');
         this.mobileCloseBtn = document.getElementById('mobileCloseBtn');
         this.mobileBookmarkBtn = document.getElementById('mobileBookmarkBtn');
+        this.mobileSheet = document.getElementById('mobileBottomSheet');
+        this.mobileSheetContent = document.getElementById('mobileSheetContent');
+        this.mobileSheetTitle = document.getElementById('mobileSheetTitle');
+        this.mobileDragZone = document.getElementById('mobileSheetDragZone');
         this.panelResizeHandle = document.getElementById('panelResizeHandle');
         this.mobileResizeHandle = document.getElementById('mobileResizeHandle');
 
@@ -54,13 +71,16 @@ class ReadingApp {
 
         // Resize handles
         this.mainLayout = document.querySelector('.main-layout');
-        this.panelResizeHandle?.addEventListener('mousedown', (e) => this.startResizePanel(e));
-        this.panelResizeHandle?.addEventListener('touchstart', (e) => this.startResizePanel(e.touches[0]));
-        this.mobileResizeHandle?.addEventListener('mousedown', (e) => this.startResizeMobileSheet(e));
-        this.mobileResizeHandle?.addEventListener('touchstart', (e) => this.startResizeMobileSheet(e.touches[0]));
+        this.setupPanelResize();
+        this.setupMobileSheet();
 
         // Keyboard navigation
         document.addEventListener('keydown', (e) => this.handleKeyboard(e));
+
+        // A sheet left open across the mobile breakpoint has no business being
+        // there — the desktop panel takes over.
+        this.wasMobile = this.isMobile();
+        window.addEventListener('resize', () => this.handleViewportChange());
 
         this.loadTest(window.TEST_ID);
 
@@ -104,6 +124,9 @@ class ReadingApp {
                 const sentenceEl = document.createElement('span');
                 sentenceEl.className = 'sentence';
                 sentenceEl.dataset.id = sentenceId;
+                // -1, not 0: focusable when the sheet hands focus back, but not
+                // 39 extra stops in the tab order.
+                sentenceEl.tabIndex = -1;
                 sentenceEl.innerHTML = `
                     <span class="sentence-number">${sentenceIndex}</span>
                     ${sentenceText}
@@ -177,6 +200,12 @@ class ReadingApp {
         // Don't navigate when typing in inputs/selects
         const tag = e.target.tagName;
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
+        if (e.key === 'Escape') {
+            if (this.mobileSheet?.classList.contains('active')) this.closeMobileSheet();
+            else this.closePanel();
+            return;
+        }
 
         if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
         e.preventDefault();
@@ -347,100 +376,302 @@ class ReadingApp {
         this.progressFill.style.width = `${progress}%`;
     }
 
-    startResizePanel(event) {
-        event.preventDefault();
-        const panel = this.analysisPanel;
+    /* ------------------------------------------------------------------
+     * Desktop splitter
+     *
+     * The handle is the middle column of the grid, so there is no position to
+     * keep in sync — writing the two track sizes moves it. Sizes are `fr`
+     * units, which are distributed after the gutter is taken out, so the
+     * columns can never overflow the layout.
+     * ---------------------------------------------------------------- */
+
+    setupPanelResize() {
         const handle = this.panelResizeHandle;
-        if (!panel || !handle || !this.mainLayout) return;
+        const layout = this.mainLayout;
+        if (!handle || !layout) return;
 
-        const layoutRect = this.mainLayout.getBoundingClientRect();
-        const startLayoutWidth = layoutRect.width;
-        const gap = parseFloat(getComputedStyle(this.mainLayout).columnGap) || 32;
-        const availableWidth = startLayoutWidth - gap;
+        layout.classList.add('is-split');
 
-        const minPanelPct = 15;
-        const maxPanelPct = 70;
+        handle.setAttribute('role', 'separator');
+        handle.setAttribute('aria-orientation', 'vertical');
+        handle.setAttribute('aria-label', 'Resize reading and analysis panes');
+        handle.setAttribute('aria-valuemin', String(SPLIT_MIN));
+        handle.setAttribute('aria-valuemax', String(SPLIT_MAX));
+        handle.tabIndex = 0;
 
-        panel.classList.add('resizing');
-        document.body.style.cursor = 'col-resize';
-        document.body.style.touchAction = 'none';
-        this.isResizing = true;
+        this.applySplit(this.readSplit(), false);
 
-        const handleResize = (moveEvent) => {
-            moveEvent.preventDefault();
-            
-            const clientX = moveEvent.clientX || moveEvent.touches?.[0]?.clientX;
-            if (clientX === undefined) return;
-            
-            const relativeX = clientX - layoutRect.left;
-            const newPanelPct = Math.min(maxPanelPct, Math.max(minPanelPct, (relativeX / availableWidth) * 100));
-            const newReadingPct = 100 - newPanelPct;
-            
-            this.mainLayout.style.gridTemplateColumns = `${newReadingPct}% ${newPanelPct}%`;
-            handle.style.left = `calc(${newPanelPct}% - 4px)`;
-        };
-
-        const stopResize = () => {
-            panel.classList.remove('resizing');
-            document.body.style.cursor = '';
-            document.body.style.touchAction = '';
-            this.isResizing = false;
-            window.removeEventListener('mousemove', handleResize);
-            window.removeEventListener('mouseup', stopResize);
-            window.removeEventListener('touchmove', handleResize);
-            window.removeEventListener('touchend', stopResize);
-        };
-
-        window.addEventListener('mousemove', handleResize);
-        window.addEventListener('mouseup', stopResize);
-        window.addEventListener('touchmove', handleResize, { passive: false });
-        window.addEventListener('touchend', stopResize);
+        handle.addEventListener('pointerdown', (e) => this.startResizePanel(e));
+        handle.addEventListener('dblclick', () => this.applySplit(SPLIT_DEFAULT));
+        handle.addEventListener('keydown', (e) => this.handleSplitKey(e));
     }
 
-    startResizeMobileSheet(event) {
+    applySplit(pct, persist = true) {
+        if (!this.mainLayout || !this.panelResizeHandle) return;
+
+        const clamped = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, pct));
+        this.splitPct = clamped;
+        this.mainLayout.style.setProperty('--split-reading', `${clamped.toFixed(3)}fr`);
+        this.mainLayout.style.setProperty('--split-panel', `${(100 - clamped).toFixed(3)}fr`);
+        this.panelResizeHandle.setAttribute('aria-valuenow', String(Math.round(clamped)));
+
+        if (persist) {
+            try {
+                localStorage.setItem(SPLIT_KEY, String(Math.round(clamped * 100) / 100));
+            } catch (e) { /* private browsing — the split just won't stick */ }
+        }
+    }
+
+    readSplit() {
+        try {
+            const saved = parseFloat(localStorage.getItem(SPLIT_KEY));
+            if (Number.isFinite(saved)) return saved;
+        } catch (e) { /* ignore */ }
+        return SPLIT_DEFAULT;
+    }
+
+    startResizePanel(event) {
+        if (this.isMobile()) return;
+        if (event.button !== undefined && event.button !== 0) return;
+
+        const handle = this.panelResizeHandle;
+        const layout = this.mainLayout;
+        const rect = layout.getBoundingClientRect();
+        const gutter = handle.getBoundingClientRect().width;
+        const track = rect.width - gutter; // width the two panes actually share
+        if (track <= 0) return;
+
         event.preventDefault();
-        const sheet = document.getElementById('mobileBottomSheet');
-        const handle = this.mobileResizeHandle;
-        if (!sheet || !handle) return;
+        try { handle.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
+        handle.classList.add('dragging');
+        document.body.classList.add('is-resizing');
 
-        const startY = event.clientY || (event.touches?.[0]?.clientY);
-        if (startY === undefined) return;
+        let pending = this.splitPct;
+        let frame = 0;
 
-        const startHeight = sheet.getBoundingClientRect().height;
-        const minHeight = 180;
-        const maxHeight = window.innerHeight * 0.85;
-        const handleRect = handle.getBoundingClientRect();
-        const startYOffset = handleRect.top + handleRect.height / 2;
+        const onMove = (moveEvent) => {
+            // The pointer grabs the middle of the gutter, so the reading pane
+            // ends half a gutter to its left.
+            const x = moveEvent.clientX - rect.left - gutter / 2;
+            pending = (x / track) * 100;
 
-        sheet.classList.add('resizing');
-        document.body.style.cursor = 'row-resize';
-        document.body.style.touchAction = 'none';
-
-        const handleResize = (moveEvent) => {
-            moveEvent.preventDefault();
-            
-            const clientY = moveEvent.clientY || moveEvent.touches?.[0]?.clientY;
-            if (clientY === undefined) return;
-            
-            const deltaY = clientY - startY;
-            const newHeight = Math.min(maxHeight, Math.max(minHeight, startHeight - deltaY));
-            sheet.style.maxHeight = `${newHeight}px`;
+            // One write per frame: a raw pointermove stream relayouts both
+            // panes far more often than the screen can show it.
+            if (frame) return;
+            frame = requestAnimationFrame(() => {
+                frame = 0;
+                this.applySplit(pending, false);
+            });
         };
 
-        const stopResize = () => {
+        const onUp = () => {
+            if (frame) cancelAnimationFrame(frame);
+            frame = 0;
+            this.applySplit(pending);
+            handle.classList.remove('dragging');
+            document.body.classList.remove('is-resizing');
+            try { handle.releasePointerCapture(event.pointerId); } catch (e) { /* ignore */ }
+            handle.removeEventListener('pointermove', onMove);
+            handle.removeEventListener('pointerup', onUp);
+            handle.removeEventListener('pointercancel', onUp);
+        };
+
+        handle.addEventListener('pointermove', onMove);
+        handle.addEventListener('pointerup', onUp);
+        handle.addEventListener('pointercancel', onUp);
+    }
+
+    handleSplitKey(e) {
+        const step = e.shiftKey ? 10 : 2;
+        let next = this.splitPct;
+
+        if (e.key === 'ArrowLeft') next -= step;
+        else if (e.key === 'ArrowRight') next += step;
+        else if (e.key === 'Home') next = SPLIT_MIN;
+        else if (e.key === 'End') next = SPLIT_MAX;
+        else if (e.key === 'Enter' || e.key === ' ') next = SPLIT_DEFAULT;
+        else return;
+
+        e.preventDefault();
+        // Arrow keys also step through sentences; while the handle has focus
+        // they belong to the handle.
+        e.stopPropagation();
+        this.applySplit(next);
+    }
+
+    /* ------------------------------------------------------------------
+     * Mobile bottom sheet
+     * ---------------------------------------------------------------- */
+
+    setupMobileSheet() {
+        const zone = this.mobileDragZone;
+        const grip = this.mobileResizeHandle;
+        if (!this.mobileSheet || !zone) return;
+
+        this.sheetSnap = this.readSheetSnap();
+
+        zone.addEventListener('pointerdown', (e) => this.startSheetDrag(e, false));
+        // Pulling down from the top of the content is the other way people
+        // expect to dismiss a sheet.
+        this.mobileSheetContent?.addEventListener('pointerdown', (e) => this.startSheetDrag(e, true));
+        grip?.addEventListener('dblclick', () => this.setSheetSnap(this.sheetSnap === 0 ? 1 : 0));
+        grip?.addEventListener('keydown', (e) => this.handleSheetKey(e));
+    }
+
+    viewportHeight() {
+        return (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    }
+
+    readSheetSnap() {
+        try {
+            const saved = parseInt(localStorage.getItem(SHEET_KEY), 10);
+            if (saved === 0 || saved === 1) return saved;
+        } catch (e) { /* ignore */ }
+        return 0;
+    }
+
+    setSheetSnap(index, animate = true) {
+        const sheet = this.mobileSheet;
+        if (!sheet) return;
+
+        this.sheetSnap = index;
+        if (!animate) sheet.classList.add('resizing');
+        sheet.style.height = `${SHEET_SNAPS[index] * this.viewportHeight()}px`;
+        if (!animate) {
+            // Force the height to land before transitions come back on.
+            void sheet.offsetHeight;
             sheet.classList.remove('resizing');
-            document.body.style.cursor = '';
-            document.body.style.touchAction = '';
-            window.removeEventListener('mousemove', handleResize);
-            window.removeEventListener('mouseup', stopResize);
-            window.removeEventListener('touchmove', handleResize);
-            window.removeEventListener('touchend', stopResize);
+        }
+
+        try {
+            localStorage.setItem(SHEET_KEY, String(index));
+        } catch (e) { /* ignore */ }
+    }
+
+    nearestSnap(fraction) {
+        let best = 0;
+        for (let i = 1; i < SHEET_SNAPS.length; i++) {
+            if (Math.abs(SHEET_SNAPS[i] - fraction) < Math.abs(SHEET_SNAPS[best] - fraction)) best = i;
+        }
+        return best;
+    }
+
+    startSheetDrag(event, fromContent) {
+        const sheet = this.mobileSheet;
+        if (!sheet || !sheet.classList.contains('active')) return;
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        // Buttons and links keep their taps.
+        if (event.target.closest('button, a') && event.target !== this.mobileResizeHandle) return;
+        if (fromContent && this.mobileSheetContent.scrollTop > 0) return;
+
+        const source = fromContent ? this.mobileSheetContent : this.mobileDragZone;
+        const startY = event.clientY;
+        const startHeight = sheet.getBoundingClientRect().height;
+        const vh = this.viewportHeight();
+        const maxHeight = vh * SHEET_SNAPS[SHEET_SNAPS.length - 1];
+
+        // A drag from the header starts at once; a drag from the content has to
+        // prove it is a deliberate pull-down and not the start of a scroll.
+        let active = !fromContent;
+        let height = startHeight;
+        let lastY = startY;
+        let lastT = event.timeStamp;
+        let velocity = 0;
+        let frame = 0;
+
+        const begin = () => {
+            active = true;
+            sheet.classList.add('resizing');
+            try { source.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
+        };
+        if (active) begin();
+
+        const onMove = (moveEvent) => {
+            const dy = moveEvent.clientY - startY;
+            if (!active) {
+                if (dy < 10) return;
+                begin();
+            }
+            // Once the browser has committed to a scroll the move is no longer
+            // cancelable; calling preventDefault then only logs a warning.
+            if (moveEvent.cancelable) moveEvent.preventDefault();
+
+            const dt = moveEvent.timeStamp - lastT;
+            if (dt > 0) velocity = (moveEvent.clientY - lastY) / dt; // +ve = downward
+            lastY = moveEvent.clientY;
+            lastT = moveEvent.timeStamp;
+
+            height = Math.min(maxHeight, Math.max(60, startHeight - dy));
+            if (frame) return;
+            frame = requestAnimationFrame(() => {
+                frame = 0;
+                sheet.style.height = `${height}px`;
+            });
         };
 
-        window.addEventListener('mousemove', handleResize);
-        window.addEventListener('mouseup', stopResize);
-        window.addEventListener('touchmove', handleResize, { passive: false });
-        window.addEventListener('touchend', stopResize);
+        const onUp = () => {
+            if (frame) cancelAnimationFrame(frame);
+            frame = 0;
+            source.removeEventListener('pointermove', onMove);
+            source.removeEventListener('pointerup', onUp);
+            source.removeEventListener('pointercancel', onUp);
+            try { source.releasePointerCapture(event.pointerId); } catch (e) { /* ignore */ }
+            if (!active) return;
+
+            sheet.classList.remove('resizing');
+            if (velocity > SHEET_FLICK || height < vh * SHEET_DISMISS) {
+                this.closeMobileSheet();
+                return;
+            }
+            this.setSheetSnap(this.nearestSnap(height / vh));
+        };
+
+        source.addEventListener('pointermove', onMove);
+        source.addEventListener('pointerup', onUp);
+        source.addEventListener('pointercancel', onUp);
+    }
+
+    handleSheetKey(e) {
+        if (e.key === 'ArrowUp') this.setSheetSnap(1);
+        else if (e.key === 'ArrowDown') this.setSheetSnap(0);
+        else return;
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    /* iOS ignores overflow:hidden on <body>. Pinning the body and restoring the
+     * scroll position afterwards is the version that actually holds. */
+    lockBodyScroll() {
+        if (this.scrollLockY != null) return;
+        this.scrollLockY = window.scrollY;
+        document.body.style.position = 'fixed';
+        document.body.style.top = `-${this.scrollLockY}px`;
+        document.body.style.left = '0';
+        document.body.style.right = '0';
+        document.body.style.overflow = 'hidden';
+    }
+
+    unlockBodyScroll() {
+        if (this.scrollLockY == null) return;
+        const y = this.scrollLockY;
+        this.scrollLockY = null;
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.left = '';
+        document.body.style.right = '';
+        document.body.style.overflow = '';
+        window.scrollTo(0, y);
+    }
+
+    handleViewportChange() {
+        const mobile = this.isMobile();
+        if (mobile !== this.wasMobile) {
+            this.wasMobile = mobile;
+            if (!mobile) this.closeMobileSheet();
+        } else if (mobile && this.mobileSheet?.classList.contains('active')) {
+            // Rotation changes what a snap fraction is worth.
+            this.setSheetSnap(this.sheetSnap, false);
+        }
     }
 
     isMobile() {
@@ -451,6 +682,15 @@ class ReadingApp {
         // Set original sentence text
         const mobileOriginal = document.getElementById('mobileOriginalSentence');
         mobileOriginal.textContent = sentenceData.text;
+
+        // Which sentence this is, so the sheet is not just "Sentence Analysis"
+        // over and over.
+        if (this.mobileSheetTitle) {
+            const index = this.sentenceElements.findIndex(s => s.id === this.currentSentence);
+            this.mobileSheetTitle.textContent = index >= 0
+                ? `Sentence ${index + 1} of ${this.sentenceElements.length}`
+                : 'Sentence Analysis';
+        }
 
         // Render vocabulary
         this.renderMobileVocabulary(sentenceData.vocabulary || []);
@@ -554,25 +794,36 @@ class ReadingApp {
     }
 
     openMobileSheet() {
-        const mobileSheet = document.getElementById('mobileBottomSheet');
-        const mobileBackdrop = document.getElementById('mobileBackdrop');
-        
-        if (mobileSheet && mobileBackdrop) {
-            mobileSheet.classList.add('active');
-            mobileBackdrop.classList.add('active');
-            document.body.style.overflow = 'hidden';
-        }
+        const sheet = this.mobileSheet;
+        const backdrop = this.mobileBackdrop;
+        if (!sheet || !backdrop) return;
+
+        // Bring the sentence out from behind the sheet before the page is
+        // pinned — once it is locked the reader cannot scroll to it. Instant,
+        // not smooth: a smooth scroll would still be in flight at lock time.
+        const active = this.sentenceElements.find(s => s.id === this.currentSentence);
+        if (active) active.element.scrollIntoView({ block: 'start', behavior: 'auto' });
+
+        this.lockBodyScroll();
+        this.setSheetSnap(this.sheetSnap, false);
+        sheet.classList.add('active');
+        backdrop.classList.add('active');
+        if (this.mobileSheetContent) this.mobileSheetContent.scrollTop = 0;
+        this.mobileCloseBtn?.focus({ preventScroll: true });
     }
 
     closeMobileSheet() {
-        const mobileSheet = document.getElementById('mobileBottomSheet');
-        const mobileBackdrop = document.getElementById('mobileBackdrop');
-        
-        if (mobileSheet && mobileBackdrop) {
-            mobileSheet.classList.remove('active');
-            mobileBackdrop.classList.remove('active');
-            document.body.style.overflow = '';
-        }
+        const sheet = this.mobileSheet;
+        const backdrop = this.mobileBackdrop;
+        if (!sheet || !backdrop) return;
+
+        sheet.classList.remove('active', 'resizing');
+        backdrop.classList.remove('active');
+        this.unlockBodyScroll();
+
+        // Put focus back where the reader was, not on a hidden dialog.
+        const active = this.sentenceElements.find(s => s.id === this.currentSentence);
+        active?.element.focus?.({ preventScroll: true });
     }
 
     // State is stored per test so identical sentence ids ("s1", "s2"...) don't collide across tests.

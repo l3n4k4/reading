@@ -82,33 +82,37 @@ h1 {
 }
 
 @media (max-width: 768px) {
+    /* The hamburger lived inside .top-nav, which was max-height:0 — so it was
+     * clipped along with the links and mobile had no navigation at all. Three
+     * short links fit in one row; a disclosure toggle just costs a tap. */
     .hamburger {
-        display: block;
+        display: none;
     }
-    
+
     .top-nav {
-        flex-direction: column;
-        gap: 0;
-        max-height: 0;
-        overflow: hidden;
-        transition: max-height 0.3s ease;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        gap: 0.375rem;
+        margin-bottom: 1rem;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
     }
-    
-    .top-nav.open {
-        max-height: 200px;
+
+    .top-nav::-webkit-scrollbar {
+        display: none;
     }
-    
+
+    /* Sizing lives in the responsive block at the bottom: .top-nav a is
+     * declared below this point, so padding set here would lose to it. */
     .top-nav a {
-        padding: 0.75rem 1rem;
-        font-size: 1rem;
-        border-radius: 0;
-        border-bottom: 1px solid var(--border);
-    }
-    
-    .top-nav a.active {
-        background: var(--primary);
-        border-color: var(--primary);
-        color: white;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        white-space: nowrap;
+        touch-action: manipulation;
     }
 }
 
@@ -230,6 +234,23 @@ h1 {
     position: relative;
 }
 
+/* Study page: reading | drag gutter | analysis.
+ *
+ * The gutter is a real grid column, so the handle always sits exactly on the
+ * seam it controls. The old handle was absolutely positioned and had to be
+ * kept in sync with the columns by hand — it drifted the moment you dragged.
+ * JS only writes --split-reading / --split-panel; everything else is CSS. */
+.main-layout.is-split {
+    --gutter: 2rem;
+    grid-template-columns:
+        minmax(0, var(--split-reading, 1fr))
+        var(--gutter)
+        minmax(0, var(--split-panel, 1fr));
+    /* Only the column gap goes: the gutter column replaces it. Row gap stays
+     * on .main-layout, which is what the single-column mobile layout uses. */
+    column-gap: 0;
+}
+
 @media (max-width: 768px) {
     .container {
         padding: 1rem;
@@ -243,16 +264,14 @@ h1 {
         font-size: 0.9rem;
     }
     
-    .stats-bar {
-        flex-direction: column;
-        gap: 0.75rem;
+    header {
+        margin-bottom: 1rem;
     }
-    
-    .stat-card {
-        min-width: 100%;
-        padding: 0.75rem 1rem;
-    }
-    
+
+    /* .stats-bar / .stat-* are declared further down this file, so an override
+     * here would lose on source order. They live in the responsive block at the
+     * bottom instead. */
+
     .main-layout {
         grid-template-columns: 1fr;
         gap: 1rem;
@@ -279,25 +298,24 @@ h1 {
     .sentence {
         padding: 0.25rem;
         margin: 0 -0.25rem;
+        /* Stop iOS painting a grey box over the whole sentence on tap; the
+         * .active style below is the feedback we actually want. */
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+        /* Leave room above when a tapped sentence is scrolled into view. */
+        scroll-margin-top: 4rem;
     }
-    
+
+    .sentence:active {
+        background: var(--surface-hover);
+    }
+
     .analysis-panel {
         position: static;
         max-height: none;
         margin-top: 1rem;
     }
-    
-    .top-nav {
-        flex-direction: row;
-        justify-content: center;
-        gap: 0.25rem;
-    }
-    
-    .top-nav a {
-        padding: 0.5rem 0.75rem;
-        font-size: 0.9rem;
-    }
-    
+
     .theme-toggle {
         bottom: 1rem;
         right: 1rem;
@@ -328,18 +346,7 @@ h1 {
         font-size: 0.85rem;
     }
     
-    .stats-bar {
-        gap: 0.5rem;
-    }
-    
-    .stat-card {
-        padding: 0.5rem 0.75rem;
-        min-width: 100%;
-    }
-    
-    .stat-value {
-        font-size: 1.25rem;
-    }
+    /* .stats-bar / .stat-* overrides: see the responsive block at the bottom. */
     
     .main-layout {
         gap: 0.75rem;
@@ -1124,11 +1131,13 @@ body.dark-theme .vocab-paraphrase {
     .analysis-panel,
     .theme-toggle,
     .stats-bar,
+    .panel-resize-handle,
     .top-nav {
         display: none !important;
     }
 
-    .main-layout {
+    .main-layout,
+    .main-layout.is-split {
         grid-template-columns: 1fr;
     }
 
@@ -1246,14 +1255,21 @@ body.dark-theme .top-nav a.active {
     bottom: 0;
     background: rgba(0, 0, 0, 0.5);
     z-index: 1000;
+    /* The sheet is the only thing meant to scroll while it is open. */
+    touch-action: none;
 }
 
 .mobile-backdrop.active {
     display: block;
 }
 
+/* The sheet is a flex column: grip and header stay put, only the analysis
+ * scrolls. Before, the whole sheet scrolled and the close button scrolled
+ * away with it. Height is driven by JS (snap points) — dvh, not vh, so the
+ * mobile URL bar collapsing does not crop the sheet. */
 .mobile-bottom-sheet {
     display: none;
+    flex-direction: column;
     position: fixed;
     bottom: 0;
     left: 0;
@@ -1263,15 +1279,23 @@ body.dark-theme .top-nav a.active {
     border-top-right-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     z-index: 1050;
-    max-height: 75vh;
-    overflow-y: auto;
+    height: 55dvh;
+    max-height: 92dvh;
+    min-height: 160px;
+    overflow: hidden;
+    padding-bottom: env(safe-area-inset-bottom);
     transform: translateY(100%);
-    transition: transform 0.3s ease, opacity 0.3s ease;
+    transition: transform 0.3s ease, height 0.25s ease;
 }
 
 .mobile-bottom-sheet.active {
-    display: block;
+    display: flex;
     transform: translateY(0);
+}
+
+/* Dragging must track the thumb exactly — no easing in the way. */
+.mobile-bottom-sheet.resizing {
+    transition: none;
 }
 
 @media (max-width: 768px) {
@@ -1279,19 +1303,44 @@ body.dark-theme .top-nav a.active {
     .mobile-bottom-sheet {
         display: none; /* Initially hidden */
     }
-    
+
     /* Hide desktop analysis panel on mobile */
     .analysis-panel {
         display: none;
     }
+
+    /* The splitter is an 8px column of dead space on mobile: it used to run
+     * the full height of the page and swallow every tap on the middle of the
+     * passage. There are no side-by-side panes here, so it has no job. */
+    .panel-resize-handle {
+        display: none;
+    }
+
+    .main-layout.is-split {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Grip + header together: the whole block drags, not just the 4px pill. */
+#mobileSheetDragZone {
+    flex: none;
+    touch-action: none;
 }
 
 .mobile-sheet-header {
+    flex: none;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem;
+    gap: 0.5rem;
+    padding: 0 1rem 0.75rem;
     border-bottom: 1px solid var(--border);
+}
+
+.mobile-sheet-header span {
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: var(--text);
 }
 
 .mobile-sheet-title {
@@ -1300,21 +1349,39 @@ body.dark-theme .top-nav a.active {
     color: var(--text);
 }
 
+/* 44px: the smallest target a thumb hits reliably. It was 22x32. */
 .mobile-close-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin-right: -0.5rem;
     background: none;
     border: none;
+    border-radius: 50%;
     font-size: 1.5rem;
     cursor: pointer;
     color: var(--text-secondary);
-    padding: 0.25rem;
+    padding: 0;
     line-height: 1;
+    touch-action: manipulation;
 }
 
-.mobile-close-btn:hover {
+.mobile-close-btn:hover,
+.mobile-close-btn:active {
     color: var(--text);
+    background: var(--surface-hover);
 }
 
 .mobile-sheet-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    /* Keep a flick inside the sheet from scrolling the passage behind it. */
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     padding: 1rem;
 }
 
@@ -1337,34 +1404,197 @@ body.dark-theme .top-nav a.active {
     margin-top: 1rem;
 }
 
-/* Resize Handle Styles */
+/* Desktop splitter
+ *
+ * The handle fills the gutter column, so the whole 2rem gap is grabbable while
+ * only a thin rail is drawn. ::before is the rail, ::after the grip pill. */
 .panel-resize-handle {
-    width: 8px;
-    height: 100%;
-    position: absolute;
-    top: 0;
-    left: calc(50% - 4px);
+    position: relative;
+    align-self: stretch;
+    justify-self: stretch;
+    border: 0;
+    padding: 0;
+    background: none;
     cursor: col-resize;
-    background: transparent;
-    transition: background 0.2s;
+    touch-action: none;
     z-index: 2;
 }
 
-.panel-resize-handle:hover,
-.panel-resize-handle.dragging {
-    background: var(--primary);
-}
-
-.mobile-resize-handle {
-    width: 44px;
-    height: 6px;
+.panel-resize-handle::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(50% - 1px);
+    width: 2px;
+    border-radius: 999px;
     background: var(--border);
-    border-radius: 3px;
-    margin: 0 auto 0.5rem;
-    cursor: row-resize;
+    opacity: 0;
+    transition: opacity 0.15s ease, background 0.15s ease;
 }
 
-.mobile-resize-handle:active {
+/* Always faintly visible: the seam has to look draggable before you touch it. */
+.panel-resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: calc(50% - 2px);
+    width: 4px;
+    height: 36px;
+    transform: translateY(-50%);
+    border-radius: 999px;
+    background: var(--border);
+    transition: background 0.15s ease, height 0.15s ease;
+}
+
+.panel-resize-handle:hover::before,
+.panel-resize-handle:focus-visible::before,
+.panel-resize-handle.dragging::before {
+    opacity: 1;
+}
+
+.panel-resize-handle:hover::after,
+.panel-resize-handle:focus-visible::after,
+.panel-resize-handle.dragging::after {
     background: var(--primary);
+    height: 56px;
+}
+
+.panel-resize-handle:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+    border-radius: var(--radius);
+}
+
+.panel-resize-handle.dragging::before {
+    background: var(--primary);
+}
+
+/* While dragging, the cursor must not flicker into text/I-beam over the panes,
+ * and a stray selection must not follow the pointer across the passage. */
+body.is-resizing,
+body.is-resizing * {
+    cursor: col-resize !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+
+body.is-resizing .analysis-panel,
+body.is-resizing .reading-section {
+    transition: none !important;
+}
+
+/* Mobile sheet grip: a 32px-tall strip so it is actually catchable with a
+ * thumb, with a 4px pill drawn inside it. */
+.mobile-sheet-grip {
+    flex: none;
+    display: block;
+    width: 100%;
+    height: 32px;
+    border: 0;
+    padding: 0;
+    background: none;
+    position: relative;
+    cursor: grab;
+    touch-action: none;
+}
+
+.mobile-sheet-grip::before {
+    content: '';
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    width: 40px;
+    height: 4px;
+    margin-left: -20px;
+    border-radius: 999px;
+    background: var(--border);
+    transition: background 0.15s ease, width 0.15s ease;
+}
+
+.mobile-sheet-grip:active::before,
+.mobile-bottom-sheet.resizing .mobile-sheet-grip::before {
+    background: var(--primary);
+    width: 56px;
+}
+
+.mobile-sheet-grip:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mobile-bottom-sheet,
+    .mobile-backdrop,
+    .panel-resize-handle::before,
+    .panel-resize-handle::after,
+    .mobile-sheet-grip::before {
+        transition: none !important;
+    }
+}
+
+/* Mobile overrides that have to come last
+ *
+ * The responsive blocks near the top of this file are declared *before*
+ * .stats-bar, .stat-* and .sentence-number, so at equal specificity the base
+ * rules win on source order and those overrides silently do nothing. Anything
+ * that must beat a base rule belongs here. */
+@media (max-width: 768px) {
+    /* Three stacked full-width cards pushed the passage a screen and a half
+     * down the page. Side by side they cost one short row. */
+    .stats-bar {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .stat-card {
+        min-width: 0;
+        padding: 0.5rem 0.625rem;
+        text-align: center;
+    }
+
+    .stat-label {
+        font-size: 0.625rem;
+        letter-spacing: 0.02em;
+        line-height: 1.3;
+    }
+
+    .stat-value {
+        font-size: 1.25rem;
+    }
+
+    /* There is no hover on touch, so the number never showed up at all. */
+    .sentence-number {
+        opacity: 1;
+    }
+
+    /* Equal thirds, so all three fit one row instead of the last one hanging
+     * off the edge at the desktop padding of 1.5rem. */
+    .top-nav a {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 0.5rem;
+        font-size: 0.85rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .stats-bar {
+        gap: 0.375rem;
+    }
+
+    .stat-card {
+        padding: 0.5rem 0.375rem;
+    }
+
+    .stat-label {
+        font-size: 0.5625rem;
+    }
+
+    .stat-value {
+        font-size: 1.1rem;
+    }
 }
 

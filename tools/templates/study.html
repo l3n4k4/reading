@@ -15,7 +15,6 @@
         </header>
 
         <nav class="top-nav" id="topNav">
-            <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu">☰</button>
             <a href="/" class="nav-back">← All tests</a>
             <a href="/{{ID}}/" class="active">📖 Study</a>
             <a href="/{{ID}}/questions/">✍️ Practice</a>
@@ -45,7 +44,8 @@
                 </div>
             </div>
 
-            <div class="panel-resize-handle" id="panelResizeHandle" title="Drag to resize panels"></div>
+            <div class="panel-resize-handle" id="panelResizeHandle"
+                 title="Drag to resize · double-click to reset · ← → to nudge"></div>
 
             <div class="analysis-panel" id="analysisPanel">
                 <div class="panel-header">
@@ -119,20 +119,19 @@
     {{TEST_SCRIPT}}
     <script src="/js/common.js"></script>
     <script src="/js/app.js"></script>
-    <script>
-        document.getElementById('hamburgerBtn')?.addEventListener('click', function() {
-            document.getElementById('topNav').classList.toggle('open');
-        });
-    </script>
 
     <div class="mobile-backdrop" id="mobileBackdrop"></div>
-    <div class="mobile-bottom-sheet" id="mobileBottomSheet">
-        <div class="mobile-sheet-header">
-            <span id="mobileSheetTitle">Sentence Analysis</span>
-            <div class="mobile-resize-handle" id="mobileResizeHandle" title="Drag to resize sheet height"></div>
-            <button class="mobile-close-btn" id="mobileCloseBtn">&times;</button>
+    <div class="mobile-bottom-sheet" id="mobileBottomSheet"
+         role="dialog" aria-modal="true" aria-labelledby="mobileSheetTitle">
+        <div id="mobileSheetDragZone">
+            <button type="button" class="mobile-sheet-grip" id="mobileResizeHandle"
+                    aria-label="Resize panel — drag, or double-tap to expand"></button>
+            <div class="mobile-sheet-header">
+                <span id="mobileSheetTitle">Sentence Analysis</span>
+                <button class="mobile-close-btn" id="mobileCloseBtn" aria-label="Close">&times;</button>
+            </div>
         </div>
-        <div class="mobile-sheet-content">
+        <div class="mobile-sheet-content" id="mobileSheetContent">
             <div id="mobileOriginalSentence" class="mobile-original-sentence"></div>
             <div class="analysis-section" id="mobileVocabSection">
                 <div class="analysis-label">

@@ -15,7 +15,6 @@
         </header>
 
         <nav class="top-nav" id="topNav">
-            <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu">☰</button>
             <a href="/" class="nav-back">← All tests</a>
             <a href="/{{ID}}/">📖 Study</a>
             <a href="/{{ID}}/questions/" class="active">✍️ Practice</a>
@@ -47,10 +46,5 @@
     {{TEST_SCRIPT}}
     <script src="/js/common.js"></script>
     <script src="/js/questions.js"></script>
-    <script>
-        document.getElementById('hamburgerBtn')?.addEventListener('click', function() {
-            document.getElementById('topNav').classList.toggle('open');
-        });
-    </script>
 </body>
 </html>
