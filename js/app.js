@@ -18,6 +18,13 @@ const SHEET_DISMISS = 0.3;
 const SHEET_FLICK = 0.7; // px/ms
 const SHEET_KEY = 'readingSheetSnap';
 
+/* Swiping the open sheet sideways steps through sentences. */
+const SWIPE_SLOP = 8;      // travel before the gesture commits to an axis
+const SWIPE_COMMIT = 64;   // travel that counts as "next sentence"
+const SWIPE_FLICK = 0.45;  // px/ms
+const SWIPE_RESIST = 3;    // drag is divided by this past the first/last sentence
+const SWIPE_SETTLE = 160;  // ms, must match .swipe-settling in style.css
+
 class ReadingApp {
     constructor() {
         this.currentTest = null;
@@ -151,7 +158,7 @@ class ReadingApp {
         this.currentSentence = sentenceId;
 
         // Scroll selected sentence into view if needed
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        this.revealSentence(element);
 
         // Track viewed sentences
         this.viewedSentences.add(sentenceId);
@@ -556,56 +563,90 @@ class ReadingApp {
         return best;
     }
 
+    /* One gesture, two meanings: sideways steps through sentences, up and down
+     * resizes or dismisses the sheet. The first few pixels of travel decide
+     * which, and the other axis is ignored for the rest of the drag — a swipe
+     * that is 70px across and 12px down must not also nudge the height. */
     startSheetDrag(event, fromContent) {
         const sheet = this.mobileSheet;
         if (!sheet || !sheet.classList.contains('active')) return;
         if (event.pointerType === 'mouse' && event.button !== 0) return;
         // Buttons and links keep their taps.
         if (event.target.closest('button, a') && event.target !== this.mobileResizeHandle) return;
-        if (fromContent && this.mobileSheetContent.scrollTop > 0) return;
+        // A swipe already mid-flight owns the content's transform.
+        if (this.swipeBusy) return;
 
-        const source = fromContent ? this.mobileSheetContent : this.mobileDragZone;
+        const content = this.mobileSheetContent;
+        const source = fromContent ? content : this.mobileDragZone;
+        const startX = event.clientX;
         const startY = event.clientY;
         const startHeight = sheet.getBoundingClientRect().height;
         const vh = this.viewportHeight();
         const maxHeight = vh * SHEET_SNAPS[SHEET_SNAPS.length - 1];
+        const startedAtTop = !content || content.scrollTop <= 0;
 
-        // A drag from the header starts at once; a drag from the content has to
-        // prove it is a deliberate pull-down and not the start of a scroll.
-        let active = !fromContent;
+        let axis = null; // null until the gesture declares itself, then 'x' | 'y' | 'none'
         let height = startHeight;
+        let offset = 0;
+        let lastX = startX;
         let lastY = startY;
         let lastT = event.timeStamp;
-        let velocity = 0;
+        let vx = 0;
+        let vy = 0;
         let frame = 0;
 
-        const begin = () => {
-            active = true;
-            sheet.classList.add('resizing');
-            try { source.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
-        };
-        if (active) begin();
+        // Capture up front, not once the axis is known: the pointer leaves this
+        // element within the first few pixels of a drag, and without capture the
+        // moves would be delivered to whatever is underneath instead. Capture
+        // does not suppress native scrolling — touch-action does — so a genuine
+        // scroll of the analysis still happens and arrives here as pointercancel.
+        try { source.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
 
         const onMove = (moveEvent) => {
+            const dx = moveEvent.clientX - startX;
             const dy = moveEvent.clientY - startY;
-            if (!active) {
-                if (dy < 10) return;
-                begin();
+
+            const dt = moveEvent.timeStamp - lastT;
+            if (dt > 0) {
+                vx = (moveEvent.clientX - lastX) / dt;
+                vy = (moveEvent.clientY - lastY) / dt; // +ve = downward
             }
+            lastX = moveEvent.clientX;
+            lastY = moveEvent.clientY;
+            lastT = moveEvent.timeStamp;
+
+            if (axis === null) {
+                if (Math.abs(dx) < SWIPE_SLOP && Math.abs(dy) < SWIPE_SLOP) return;
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    axis = 'x';
+                    content?.classList.add('swiping');
+                } else if (fromContent && (!startedAtTop || dy < 0)) {
+                    // Reading down the analysis — leave the scroll alone.
+                    axis = 'none';
+                    return;
+                } else {
+                    axis = 'y';
+                    sheet.classList.add('resizing');
+                }
+            }
+            if (axis === 'none') return;
+
             // Once the browser has committed to a scroll the move is no longer
             // cancelable; calling preventDefault then only logs a warning.
             if (moveEvent.cancelable) moveEvent.preventDefault();
 
-            const dt = moveEvent.timeStamp - lastT;
-            if (dt > 0) velocity = (moveEvent.clientY - lastY) / dt; // +ve = downward
-            lastY = moveEvent.clientY;
-            lastT = moveEvent.timeStamp;
+            if (axis === 'x') {
+                // Nothing to page to at the ends, so the sheet pulls back.
+                offset = this.neighbourSentence(dx < 0 ? 1 : -1) ? dx : dx / SWIPE_RESIST;
+            } else {
+                height = Math.min(maxHeight, Math.max(60, startHeight - dy));
+            }
 
-            height = Math.min(maxHeight, Math.max(60, startHeight - dy));
             if (frame) return;
             frame = requestAnimationFrame(() => {
                 frame = 0;
-                sheet.style.height = `${height}px`;
+                if (axis === 'x') content.style.transform = `translateX(${offset}px)`;
+                else sheet.style.height = `${height}px`;
             });
         };
 
@@ -616,10 +657,18 @@ class ReadingApp {
             source.removeEventListener('pointerup', onUp);
             source.removeEventListener('pointercancel', onUp);
             try { source.releasePointerCapture(event.pointerId); } catch (e) { /* ignore */ }
-            if (!active) return;
+
+            if (axis === 'x') {
+                const direction = offset < 0 ? 1 : -1;
+                const committed = Math.abs(offset) > SWIPE_COMMIT ||
+                    (Math.abs(vx) > SWIPE_FLICK && Math.sign(vx) === -direction);
+                this.finishSwipe(committed && this.neighbourSentence(direction) ? direction : 0);
+                return;
+            }
+            if (axis !== 'y') return;
 
             sheet.classList.remove('resizing');
-            if (velocity > SHEET_FLICK || height < vh * SHEET_DISMISS) {
+            if (vy > SHEET_FLICK || height < vh * SHEET_DISMISS) {
                 this.closeMobileSheet();
                 return;
             }
@@ -629,6 +678,56 @@ class ReadingApp {
         source.addEventListener('pointermove', onMove);
         source.addEventListener('pointerup', onUp);
         source.addEventListener('pointercancel', onUp);
+    }
+
+    /* The sentence `direction` steps away, or null at either end. */
+    neighbourSentence(direction) {
+        const index = this.sentenceElements.findIndex(s => s.id === this.currentSentence);
+        if (index === -1) return null;
+        return this.sentenceElements[index + direction] || null;
+    }
+
+    /* direction: 1 next, -1 previous, 0 snap back. The old analysis slides out
+     * the way the thumb went and the new one comes in from the far side. */
+    finishSwipe(direction) {
+        const content = this.mobileSheetContent;
+        if (!content) return;
+
+        content.classList.remove('swiping');
+        content.classList.add('swipe-settling');
+
+        if (!direction) {
+            content.style.transform = '';
+            this.afterSwipeSettle(content);
+            return;
+        }
+
+        const width = content.getBoundingClientRect().width || 320;
+        this.swipeBusy = true;
+        content.style.transform = `translateX(${-direction * width * 0.35}px)`;
+        content.style.opacity = '0';
+
+        window.setTimeout(() => {
+            this.navigateToSentence(direction);
+            // Land on the far side without animating, then run back to rest.
+            content.classList.remove('swipe-settling');
+            content.style.transform = `translateX(${direction * width * 0.35}px)`;
+            void content.offsetWidth;
+            content.classList.add('swipe-settling');
+            content.style.transform = '';
+            content.style.opacity = '';
+            this.afterSwipeSettle(content);
+        }, SWIPE_SETTLE);
+    }
+
+    afterSwipeSettle(content) {
+        window.clearTimeout(this.swipeSettleTimer);
+        this.swipeSettleTimer = window.setTimeout(() => {
+            content.classList.remove('swipe-settling');
+            content.style.transform = '';
+            content.style.opacity = '';
+            this.swipeBusy = false;
+        }, SWIPE_SETTLE);
     }
 
     handleSheetKey(e) {
@@ -644,11 +743,32 @@ class ReadingApp {
     lockBodyScroll() {
         if (this.scrollLockY != null) return;
         this.scrollLockY = window.scrollY;
+        // Once the body is out of flow the document stops being scrollable, so
+        // the range has to be measured before pinning it.
+        this.scrollLockMax = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
         document.body.style.position = 'fixed';
         document.body.style.top = `-${this.scrollLockY}px`;
         document.body.style.left = '0';
         document.body.style.right = '0';
         document.body.style.overflow = 'hidden';
+    }
+
+    /* Put a sentence where the reader can see it, whether or not the page is
+     * currently pinned behind the sheet. Pinned, the body is offset by
+     * -scrollLockY, so moving the passage means moving that offset. */
+    revealSentence(element) {
+        if (!element) return;
+
+        if (this.scrollLockY == null) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+        }
+
+        const margin = 72; // clear of the sticky nothing at the top, and of the sheet
+        const documentY = element.getBoundingClientRect().top + this.scrollLockY;
+        const target = Math.min(this.scrollLockMax, Math.max(0, documentY - margin));
+        this.scrollLockY = target;
+        document.body.style.top = `-${target}px`;
     }
 
     unlockBodyScroll() {
@@ -797,6 +917,14 @@ class ReadingApp {
         const sheet = this.mobileSheet;
         const backdrop = this.mobileBackdrop;
         if (!sheet || !backdrop) return;
+
+        // Swiping to the next sentence re-enters here with the sheet already
+        // up. Only the content is new; re-running the open choreography would
+        // re-snap the height and yank focus back to the close button.
+        if (sheet.classList.contains('active')) {
+            if (this.mobileSheetContent) this.mobileSheetContent.scrollTop = 0;
+            return;
+        }
 
         // Bring the sentence out from behind the sheet before the page is
         // pinned — once it is locked the reader cannot scroll to it. Instant,

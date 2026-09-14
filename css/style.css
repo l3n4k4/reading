@@ -1321,6 +1321,19 @@ body.dark-theme .top-nav a.active {
     }
 }
 
+/* Paging between sentences. .swiping tracks the thumb with no easing in the
+ * way; .swipe-settling runs the 160ms slide out and back in (SWIPE_SETTLE in
+ * js/app.js must match). */
+.mobile-sheet-content.swiping {
+    transition: none;
+    will-change: transform;
+}
+
+.mobile-sheet-content.swipe-settling {
+    transition: transform 0.16s ease, opacity 0.16s ease;
+    will-change: transform, opacity;
+}
+
 /* Grip + header together: the whole block drags, not just the 4px pill. */
 #mobileSheetDragZone {
     flex: none;
@@ -1379,6 +1392,9 @@ body.dark-theme .top-nav a.active {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    /* Sideways travel is the sentence-paging gesture; the browser must not
+     * read it as a horizontal scroll or a back-navigation. */
+    overscroll-behavior-x: none;
     /* Keep a flick inside the sheet from scrolling the passage behind it. */
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
@@ -1526,6 +1542,7 @@ body.is-resizing .reading-section {
 @media (prefers-reduced-motion: reduce) {
     .mobile-bottom-sheet,
     .mobile-backdrop,
+    .mobile-sheet-content.swipe-settling,
     .panel-resize-handle::before,
     .panel-resize-handle::after,
     .mobile-sheet-grip::before {
