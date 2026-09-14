@@ -1,5 +1,6 @@
 /**
- * Practice page (questions.html) — reading passage + interactive questions.
+ * Practice page (/<test-id>/questions/) — reading passage + interactive questions.
+ * The page loads one test file and sets window.TEST_ID; see tools/build.js.
  */
 'use strict';
 
@@ -16,18 +17,12 @@ class QuestionsPage {
 
     init() {
         // DOM Elements
-        this.testSelect = document.getElementById('testSelect');
         this.readingTitle = document.getElementById('readingTitle');
         this.readingSubtitle = document.getElementById('readingSubtitle');
         this.readingContent = document.getElementById('readingContent');
         this.questionsPanel = document.getElementById('questionsView');
 
-        // Bind events
-        this.testSelect.addEventListener('change', () => this.loadTest(this.testSelect.value));
-
-        // Populate test selector (preserves saved test)
-        const savedTest = populateTestSelector(this.testSelect, 'currentTest');
-        this.loadTest(savedTest);
+        this.loadTest(window.TEST_ID);
 
         initTheme(document.getElementById('themeToggle'));
     }
@@ -35,8 +30,6 @@ class QuestionsPage {
     loadTest(testId) {
         this.currentTest = getReadingTest(testId);
         if (!this.currentTest) return;
-
-        localStorage.setItem('currentTest', testId);
 
         this.readingTitle.textContent = this.currentTest.title;
         this.readingSubtitle.textContent = this.currentTest.subtitle;

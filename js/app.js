@@ -1,6 +1,7 @@
 /**
- * Study page (index.html) — reading passage + sentence analysis.
- * Quiz logic lives in questions.html / js/questions.js.
+ * Study page (/<test-id>/) — reading passage + sentence analysis.
+ * Quiz logic lives in /<test-id>/questions/ and js/questions.js.
+ * The page loads one test file and sets window.TEST_ID; see tools/build.js.
  */
 'use strict';
 
@@ -17,7 +18,6 @@ class ReadingApp {
 
     init() {
         // DOM Elements
-        this.testSelect = document.getElementById('testSelect');
         this.readingTitle = document.getElementById('readingTitle');
         this.readingSubtitle = document.getElementById('readingSubtitle');
         this.readingContent = document.getElementById('readingContent');
@@ -46,7 +46,6 @@ class ReadingApp {
         this.bookmarkedSentencesEl = document.getElementById('bookmarkedSentences');
 
         // Bind events
-        this.testSelect.addEventListener('change', () => this.loadTest(this.testSelect.value));
         this.closeBtn.addEventListener('click', () => this.closePanel());
         this.bookmarkBtn.addEventListener('click', () => this.toggleBookmark());
         this.mobileCloseBtn?.addEventListener('click', () => this.closeMobileSheet());
@@ -63,9 +62,7 @@ class ReadingApp {
         // Keyboard navigation
         document.addEventListener('keydown', (e) => this.handleKeyboard(e));
 
-        // Populate test selector (preserves saved test)
-        const savedTest = populateTestSelector(this.testSelect, 'currentTest');
-        this.loadTest(savedTest);
+        this.loadTest(window.TEST_ID);
 
         initTheme(document.getElementById('themeToggle'));
     }
@@ -73,8 +70,6 @@ class ReadingApp {
     loadTest(testId) {
         this.currentTest = getReadingTest(testId);
         if (!this.currentTest) return;
-
-        localStorage.setItem('currentTest', testId);
 
         this.readingTitle.textContent = this.currentTest.title;
         this.readingSubtitle.textContent = this.currentTest.subtitle;
@@ -606,6 +601,9 @@ class ReadingApp {
             this.bookmarkedSentences = new Set();
         }
     }
-
-    // Initialize app when DOM is ready
 }
+
+// Initialize app when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    window.readingApp = new ReadingApp();
+});

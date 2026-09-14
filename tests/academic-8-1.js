@@ -1,6 +1,8 @@
 /* Test: Harsh marks 'put pupils off languages' */
 /* id: academic-8-1 */
 
+window.readingTests = window.readingTests || [];
+
 window.readingTests.push({
   id: "academic-8-1",
   title: "Harsh marks 'put pupils off languages'",

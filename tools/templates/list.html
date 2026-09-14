@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>IELTS Reading Practice — All Tests</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📚 IELTS Reading Practice</h1>
+            <p class="subtitle">{{COUNT}} reading tests — pick one to study or practice</p>
+        </header>
+
+{{GROUPS}}
+    </div>
+
+    <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">🌙</button>
+
+    <script src="/js/common.js"></script>
+    <script>initTheme(document.getElementById('themeToggle'));</script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{TITLE}} — Practice</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📚 IELTS Reading Practice</h1>
+            <p class="subtitle">Answer the questions based on the reading passage</p>
+        </header>
+
+        <nav class="top-nav" id="topNav">
+            <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu">☰</button>
+            <a href="/" class="nav-back">← All tests</a>
+            <a href="/{{ID}}/">📖 Study</a>
+            <a href="/{{ID}}/questions/" class="active">✍️ Practice</a>
+        </nav>
+
+        <div class="main-layout">
+            <div class="reading-section">
+                <h2 class="reading-title" id="readingTitle"></h2>
+                <p class="reading-subtitle" id="readingSubtitle"></p>
+                <div class="reading-content" id="readingContent">
+                    <!-- Sentences will be rendered here -->
+                </div>
+            </div>
+
+            <div class="analysis-panel">
+                <div class="panel-header">
+                    <div class="panel-title">✍️ Questions</div>
+                </div>
+                <div id="questionsView">
+                    <!-- Questions will be rendered here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">🌙</button>
+
+    <script>window.TEST_ID = {{ID_JSON}};</script>
+    {{TEST_SCRIPT}}
+    <script src="/js/common.js"></script>
+    <script src="/js/questions.js"></script>
+    <script>
+        document.getElementById('hamburgerBtn')?.addEventListener('click', function() {
+            document.getElementById('topNav').classList.toggle('open');
+        });
+    </script>
+</body>
+</html>

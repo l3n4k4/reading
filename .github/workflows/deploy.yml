@@ -19,13 +19,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Chỉ đưa file thật sự phục vụ trang web lên Pages.
-      # server.js / tools/ / reading.text là công cụ dev, không deploy.
-      - name: Stage site files
-        run: |
-          mkdir -p dist
-          cp index.html questions.html dist/
-          cp -r css js tests dist/
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Sinh dist/: một trang cho mỗi bài, mỗi trang chỉ nạp file test của nó.
+      - name: Build site
+        run: node tools/build.js
+
+      # Build sai thì fail ở đây, không deploy ra bản hỏng.
+      - name: Verify build
+        run: node tools/verify-build.js
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3

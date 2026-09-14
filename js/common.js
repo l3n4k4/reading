@@ -1,5 +1,7 @@
 /* Shared helpers for both pages.
  * Reads window.readingTests, which is populated by the files in tests/.
+ * Each generated page loads exactly one test file and sets window.TEST_ID
+ * to that test's id (see tools/build.js).
  */
 'use strict';
 
@@ -9,22 +11,6 @@ function getReadingTests() {
 
 function getReadingTest(id) {
     return getReadingTests().find(function (t) { return t.id === id; }) || null;
-}
-
-/* Fill a <select> with all tests. Returns the saved (or first) test id. */
-function populateTestSelector(selectEl, key) {
-    var tests = getReadingTests();
-    var saved = localStorage.getItem(key);
-    var chosen = saved && tests.some(function (t) { return t.id === saved; }) ? saved : tests[0].id;
-
-    tests.forEach(function (test) {
-        var option = document.createElement('option');
-        option.value = test.id;
-        option.textContent = test.title;
-        selectEl.appendChild(option);
-    });
-    selectEl.value = chosen;
-    return chosen;
 }
 
 /* Theme: dark is the default. Calls back when the toggle is clicked. */
